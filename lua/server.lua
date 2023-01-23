@@ -94,6 +94,9 @@ end
 
 local function process_cmd(sock, cmd, args)
             ngx.log(ngx.INFO, "in process_cmd:", cmd)
+            if args then 
+                ngx.log(ngx.INFO, "Total args:", table.getn(args))
+            end
             if cmd == "QUIT" or cmd == "BYE" then
                 sock:send('+OK\r\n')
                 ngx.flush(true)
@@ -159,7 +162,7 @@ local function process_cmd(sock, cmd, args)
                  local msg = resp.encode(tokenize(args[3]))
                  sock:send(msg)
                  return true
-            elseif cmd == "TOKENIZE" then
+            elseif cmd == "MANCHESTER" then
                 ngx.log(ngx.INFO, "HGET command received")
                  if args[2] == nil or args[3] == nil  then
                     sock:send("-ERR must pass key and field\r\n")
@@ -168,6 +171,23 @@ local function process_cmd(sock, cmd, args)
                  ngx.log(ngx.INFO, "key: ", args[2])
                  ngx.log(ngx.INFO, "field: ", args[3])
                  local msg = resp.encode(tokenize(args[3]))
+                 sock:send(msg)
+                 return true
+            elseif cmd == "HMGET" or cmd == "MMANCHESTER"then
+                ngx.log(ngx.INFO, "HMGET command received")
+                 if args[2] == nil or args[3] == nil  then
+                    sock:send("-ERR must pass key and atleast field\r\n")
+                    return true
+                 end
+                 ngx.log(ngx.INFO, "key: ", args[2])
+                 ngx.log(ngx.INFO, "field: ", args[3])
+                 local resp_table = {}
+                 for i, v in ipairs(args) do
+                    if i > 2 then 
+                        resp_table[i-2] = tokenize(args[i])
+                    end
+                  end
+                 local msg = resp.encode(resp_table)
                  sock:send(msg)
                  return true
             else 
