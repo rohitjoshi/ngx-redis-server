@@ -48,50 +48,6 @@ local function parse_cmd(packet, remaning_buffer)
     return cmd, args, consumed, remaning_buffer
 end
 
---- authenticate()
---- read data, parse login command
- function M.authenticate(sock, remaning_buffer)
-    ngx.log(ngx.INFO, "Authenticate client")
-    local packet, err, args_len
-    sock:settimeout(60000)  -- one second timeout
-    packet, err = sock:receiveany(16384)
-    if not packet then
-        ngx.log(ngx.ERR, "failed to read packet content: ", err)
-        return ngx.say("failed to read packet content: " .. err)
-    end
-    local packet = remaning_buffer .. packet
-    remaning_buffer = ""
-    ngx.log(ngx.INFO, "received command: ", packet)
-    local cmd, args, remaning_buffer = parse_cmd(packet, remaning_buffer)
-    if args then
-      args_len = table.getn(args)
-    else
-      args_len = 0
-    end
-
-    if cmd ~= "AUTH" then
-        sock:send("-ERR You must login first")
-        return false
-    end 
-    
-    ngx.log(ngx.INFO, "username: ", args[2])
-    ngx.log(ngx.INFO, "password: ", args[3])
-
-    if args[2] ~= "rohit" or args[3] ~= "password" then 
-        return ngx.say("-WRONGPASS invalid username-password pair or user is disabled.")
-    end 
-    --local msg = resp.encode('OK')
-    sock:send('+OK\r\n')
-    --sock:send(msg)
-    return true , remaning_buffer
-
-end
-
-local function tokenize(data)
-    return string. reverse(data)
-end
-
-
 local function process_cmd(sock, cmd, args)
             ngx.log(ngx.INFO, "in process_cmd:", cmd)
             if args then 
@@ -144,36 +100,98 @@ local function process_cmd(sock, cmd, args)
                 sock:send('-ERR Not Supported\r\n')
                 return true
             elseif cmd == "GET" then 
-                ngx.log(ngx.WARN, "Command GET, Resp:+GETVAL")
-                sock:send("+GETVAL\r\n")
+                if args[2] == nil then 
+                    sock:send("-ERR must pass key\r\n")
+                    return true
+                 end
+                local val = cache:get(args[2])
+                if not val then 
+                    sock:send("-ERR not found\r\n")
+                    return true
+                 end 
+                local val_resp = '+' .. val .. '\r\n'
+                ngx.log(ngx.WARN, "Command GET: Resp:", val_resp)
+                sock:send(val_resp)
                 return true
-            elseif cmd == "SET" or cmd == "DEL" then 
+            elseif cmd == "SET"  then 
+                if args[2] == nil or args[3] == nil  then
+                    sock:send("-ERR must pass key and field\r\n")
+                    return true
+                 end
+                 cache:set(args[2], args[3])
+                ngx.log(ngx.WARN, "Command " .. cmd .. "Resp:+OK")
+                sock:send('+OK\r\n')
+                return true
+            elseif  cmd == "DEL" then 
+                cache:delete(args[2])
                 ngx.log(ngx.WARN, "Command " .. cmd .. "Resp:+OK")
                 sock:send('+OK\r\n')
                 return true
             end
+
             if cmd == "HGET" then
-                ngx.log(ngx.INFO, "HGET command received")
-                 if args[2] == nil or args[3] == nil  then
-                    return sock:send("-ERR must pass key and field\r\n")
-                 end
-                 ngx.log(ngx.INFO, "key: ", args[2])
-                 ngx.log(ngx.INFO, "field: ", args[3])
-                 local msg = resp.encode(tokenize(args[3]))
-                 sock:send(msg)
-                 return true
-            elseif cmd == "MANCHESTER" then
                 ngx.log(ngx.INFO, "HGET command received")
                  if args[2] == nil or args[3] == nil  then
                     sock:send("-ERR must pass key and field\r\n")
                     return true
                  end
+                 local key_table = cache:get(args[2])
+                 if not key_table then 
+                    sock:send("-ERR not found\r\n")
+                    return true
+                 end
                  ngx.log(ngx.INFO, "key: ", args[2])
                  ngx.log(ngx.INFO, "field: ", args[3])
-                 local msg = resp.encode(tokenize(args[3]))
+                 local val = key_table[args[3]] 
+                 if not val then 
+                    ngx.log(ngx.INFO, "key: ", args[3], " not found")
+                    sock:send("-ERR not found\r\n")
+                    return true
+                 end
+                 
+                 local msg = resp.encode(val)
                  sock:send(msg)
                  return true
-            elseif cmd == "HMGET" or cmd == "MMANCHESTER"then
+            elseif cmd == "HSET" then
+                ngx.log(ngx.INFO, "HSET command received")
+                 if args[2] == nil or args[3] == nil or args[4] == nil then
+                    sock:send("-ERR must pass key,  field and val \r\n")
+                    return true
+                 end
+                 local key_table = cache:get(args[2])
+                 if not key_table then 
+                    ngx.log(ngx.INFO, "Cache table not found for key: ", args[2])
+                    key_table = {}
+                 end
+                 key_table[args[3]] = args[4]
+
+                 cache:set(args[2], key_table)
+                 
+                 ngx.log(ngx.INFO, "key: ", args[2])
+                 ngx.log(ngx.INFO, "field: ", args[3])
+                 ngx.log(ngx.INFO, "Val: ", args[4])
+                 sock:send('+OK\r\n')
+                 return true
+            elseif cmd == "HMSET" then
+                ngx.log(ngx.INFO, "HSET command received")
+                 if args[2] == nil or args[3] == nil or args[4] == nil then
+                    sock:send("-ERR must pass key,  field and val \r\n")
+                    return true
+                 end
+                 local key_table = cache:get(args[2])
+                 if not key_table then 
+                    key_table = {}
+                 end
+                  ngx.log(ngx.INFO, "key: ", args[2])
+                 for i, v in ipairs(args) do
+                    if i > 2 and i % 2 > 0 then 
+                        key_table[args[i]] = args[i+1]
+                        ngx.log(ngx.INFO, "key: ", args[i], "value:", args[i+1])
+                    end
+                  end
+                 sock:send('+OK\r\n')
+                 return true
+            elseif cmd == "HMGET" then
                 ngx.log(ngx.INFO, "HMGET command received")
                  if args[2] == nil or args[3] == nil  then
                     sock:send("-ERR must pass key and atleast field\r\n")
@@ -181,10 +199,16 @@ local function process_cmd(sock, cmd, args)
                  end
                  ngx.log(ngx.INFO, "key: ", args[2])
                  ngx.log(ngx.INFO, "field: ", args[3])
+                 local key_table = cache:get(args[2])
+                 if not key_table then 
+                    sock:send("-ERR not found\r\n")
+                    return true
+                 end
+                
                  local resp_table = {}
                  for i, v in ipairs(args) do
                     if i > 2 then 
-                        resp_table[i-2] = tokenize(args[i])
+                        resp_table[i-2] = key_table[v]
                     end
                   end
                  local msg = resp.encode(resp_table)
