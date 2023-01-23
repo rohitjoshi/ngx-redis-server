@@ -8,6 +8,8 @@ if not cache then
 end
 
 local M = { _VERSION = "0.01" }
+--read from config
+local auth_enabled = false 
 
 local function dump(o)
    if type(o) == 'table' then
@@ -60,16 +62,21 @@ local function process_cmd(sock, cmd, args)
                 return false
             end
             if cmd == "AUTH" then
+                local authenticated_key = ngx.var.remote_addr .. ':' .. ngx.var.remote_port
+                -- TODO: replace hard coded username and password with 
                 if args[2] ~= "rohit" or args[3] ~= "password" then 
                     sock:send("-WRONGPASS invalid username-password pair or user is disabled.\r\n")
-                    cache:delete(authenticated_key)
+                    if auth_enabled then 
+                        cache:delete(authenticated_key)
+                    end
                     return true
                 end 
-                local authenticated_key = ngx.var.remote_addr .. ':' .. ngx.var.remote_port
-                cache:set(authenticated_key, true)
-                local authenticated_val = cache:get(key)
-                ngx.log(ngx.INFO, "Client authenticated_val from cache:", authenticated )
-                ngx.log(ngx.INFO, "Authenticated successfully:", authenticated_val)
+                if auth_enabled then 
+                    cache:set(authenticated_key, true)
+                    local authenticated_val = cache:get(key)
+                    ngx.log(ngx.INFO, "Client authenticated_val from cache:", authenticated )
+                    ngx.log(ngx.INFO, "Authenticated successfully:", authenticated_val)
+                end
                 ngx.log(ngx.WARN, "Command AUTH, Resp: +OK")
                 return sock:send('+OK\r\n')
             elseif cmd == "PING" then 
@@ -85,21 +92,24 @@ local function process_cmd(sock, cmd, args)
                     sock:send('+PONG\r\n')
                     return true
                 end
-            end
-            -- commands requires authentication
-            -- local authenticated_key = ngx.var.remote_addr .. ':' .. ngx.var.remote_port
-            -- local authenticated_val = cache:get(authenticated_key)
-            -- ngx.log(ngx.INFO, "Client authenticated:", authenticated_val )
-            -- if not authenticated_val then 
-            --      ngx.log(ngx.INFO, "Client not authenticated:", authenticated_key )
-            --      sock:send("-ERR You must login first\r\n")
-            --      return true
-            -- end
-            if cmd == "CONFIG" then 
+            elseif cmd == "CONFIG" then 
                 ngx.log(ngx.WARN, "Command CONFIG, Resp:-ERR Not Supported")
                 sock:send('-ERR Not Supported\r\n')
                 return true
-            elseif cmd == "GET" then 
+            end
+            -- commands requires authentication
+            if auth_enabled then 
+                local authenticated_key = ngx.var.remote_addr .. ':' .. ngx.var.remote_port
+                local authenticated_val = cache:get(authenticated_key)
+                ngx.log(ngx.INFO, "Client authenticated:", authenticated_val )
+                if not authenticated_val then 
+                    ngx.log(ngx.INFO, "Client not authenticated:", authenticated_key )
+                    sock:send("-ERR You must login first\r\n")
+                    return true
+                end
+            end
+            
+            if cmd == "GET" then 
                 if args[2] == nil then 
                     sock:send("-ERR must pass key\r\n")
                     return true
