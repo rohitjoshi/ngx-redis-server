@@ -39,7 +39,9 @@ Summary:
           avg       min       p50       p95       p99       max
         3.281     0.104     3.263     5.935     6.407     6.583
 ```
+### Details:
 
+```
 ====== SET ======
   1000000 requests completed in 1.90 seconds
   20 parallel clients
@@ -100,6 +102,8 @@ Summary:
   latency summary (msec):
           avg       min       p50       p95       p99       max
         3.419     0.592     4.143     7.631     8.375    17.695
+```
+```
 ====== GET ======
   1000000 requests completed in 1.82 seconds
   20 parallel clients
@@ -150,3 +154,4 @@ Summary:
   latency summary (msec):
           avg       min       p50       p95       p99       max
         3.281     0.104     3.263     5.935     6.407     6.583
+```
